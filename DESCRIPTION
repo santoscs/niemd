@@ -1,0 +1,13 @@
+Package: niemd
+Title: Nucleo da Inflacao com Decomposicao de Modo Empirico (EMD) 
+Version: 0.0.0.9000
+Authors@R: person("Cristiano", "Santos", email = "cristiano1br@gmail.com", role = c("aut", "cre"))
+Description: What the package does (one paragraph).
+Depends:
+    R (>= 3.3.1)
+License: file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 5.0.1
+Imports: ggplot2,
+    zoo

@@ -1,0 +1,243 @@
+---
+title: "resultados"
+author: "Cristiano"
+date: "12 de outubro de 2016"
+output: 
+  word_document: 
+    fig_height: 7
+    fig_width: 9
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+O resumo deste para realizar os seguintes procedimentos: 
+
+- Decomposição com EMD do IPCA
+- Estatísticas descritivas das IMFs
+ 
+
+
+
+## Decomposição do IPCA com CEEMDAN 
+
+```{r demd, message=FALSE}
+devtools::load_all()
+library(nimcno)
+ipca <- ipca95[,"ipca"]
+demd <- Rlibeemd::ceemdan(ipca, noise_strength = 0.4)
+x <- cbind(ipca, demd)
+colnames(x) <- c("IPCA", colnames(demd))
+tsplot(x)
+```
+
+
+## Estatísticas descritivas das IMFs
+
+Período médio é o número total de observações dividido pelo número total de máximos locais de cada IMF.
+
+correlação entre a IMF e a serie IPCA
+
+```{r estdesc}
+n <- length(demd[,1])
+ntml <- apply(demd, 2, function(x) length(Rlibeemd::extrema(x)$maxima[,1]))
+pm <- n/ntml
+vari <- apply(demd, 2, var)
+varip <- (vari/var(ipca))*100
+# tabela com os resultados
+tab <- n2tab(cbind(pm, vari, varip), 2)
+tab <- rbind(obs=c(rep("",1), n2tab(var(ipca), 2), ""),
+      tab,
+      soma=c(rep("",2), n2tab(sum(varip), 2)))
+colnames(tab) <- c("Período Médio (mês)",
+                   "Variância",
+                   "variância como % da variância observada")
+knitr::kable(tab)
+```
+
+## Escolha da tendencia
+
+```{r trend, warning=FALSE}
+# media das reconstrucoes parciais 
+fc <- vector()
+rp <- demd
+for(i in 1:(length(demd[1,])-1)){
+  rp[,i]<- apply(as.matrix(demd[,1:i]), 1, sum)
+  fc[i] <- mean(rp[,i])
+}
+
+# teste t
+rpt <- apply(rp, 2, function(x) t.test(x)$p.value)
+
+library(ggplot2)
+n <- length(demd[1,])
+df <- data.frame(media=fc, rpt=n2tab(rpt[-n]), d=1:(n-1))
+g <- ggplot(df, aes(y = media, x = d)) +
+  geom_line(linetype="dashed", alpha=.6) +
+  geom_point() + 
+  geom_hline(yintercept=0) +
+  scale_x_continuous(breaks=1:max(df$d)) +
+  geom_text(aes(y=media+.5*mean(media), label=rpt, vjust=0), size=4.5, family="Times", position = "dodge") +
+  theme_bw(base_size = 14)
+g
+
+```
+
+
+## Núcleo como tedência da inflação
+
+
+```{r core-emd, fig.show='hold', warning=FALSE}
+core <- apply(as.matrix(demd[,-(1:5)]), 1, sum)
+attributes(core) <- attributes(ipca)
+u <- ipca - core
+x <- cbind(tendencia=core, ciclo=u)
+y <- cbind(ipca, NA)
+tsplot(x, y)
+```
+
+
+## Teste de estacionaridade
+
+```{r adf, warning=FALSE}
+library(nimcno)
+x <- cbind(ipca, core, ipca95[,-1])
+tab <- tab.stationary(acum(x))
+knitr::kable(tab)
+x <- cbind(core, ipca95[,-1])
+tab <- tab.marques(y=acum(ipca), x=acum(x))
+knitr::kable(tab)
+```
+
+## Grafico das series
+
+```{r series, fig.show='hold', warning=FALSE}
+library(grid)
+library(gridExtra)
+x <- cbind(core, ipca95[,-1])
+colnames(x) <- c("CORE-EMD", "IPCA-MAS", "IPCA-MA", "IPCA-EX", "IPCA-EX2", "IPCA-DP")
+y <- ipca
+p1 <- tsplot(acum(x[,1:3]), acum(y))
+p2 <- tsplot(acum(x[,4:6]), acum(y))
+grid.arrange(p1, p2, ncol = 2)
+```
+
+
+## Teste de Previsão
+
+
+```{r outsample}
+# Previsao fora da amostra
+library(pimfc)
+library(zoo)
+
+cores <- x
+cores <- acum(cores)
+ipca12 <- acum(ipca)
+
+out12.mdd <- vector("list")
+for(i in 1:ncol(cores)){
+    out12.mdd[[i]] <- outsample.mdd(yh=ipca12, yt=ipca12, x=cores[ ,i], m=6, p=6, n=48, h=12)
+}
+out12.mdd[[i+1]] <- outsample.mdd(yh=ipca12, yt=ipca12, x=NULL, m=6, p=6, n=48, h=12)
+
+# matriz de dados com as previsoes
+x <-sapply(out12.mdd, function(x) x$fcast)
+atr <- tsp(out12.mdd[[1]]$fcast)
+x <- ts(x, start = atr[1], end = atr[2], frequency = atr[3])
+
+# ipca em 12 meses no periodo fora da amostra
+ipca12 <- window(acum(ipca), start=start(x), end=end(x))
+
+colnames(x) <- c("core", colnames(ipca95[,-1]), "benchmark")
+dados <- cbind(ipca12, x)
+
+tab1 <- tab.reqm(dados, obs = "ipca12", ref = "x.benchmark")
+tab2 <- tab.enctest(dados, obs = "ipca12", ref = "x.benchmark")
+tab <- cbind(tab1[,-3], c("",tab2[,3]))
+knitr::kable(tab)
+```
+
+
+
+
+```{r prevs}
+colnames(dados) <-c("IPCA", "CORE-EMD", "IPCA-MAS", "IPCA-MA", "IPCA-EX", "IPCA-EX2", "IPCA-DP", "IPCA-referencia")
+tsplot(dados, facet = F)
+```
+
+
+## Plot emd shifting
+
+```{r plot emd}
+
+library(EMD)
+ndata <- 3000
+tt2 <- seq(0, 9, length=ndata)
+xt2 <- sin(pi * tt2) + sin(2* pi * tt2) + sin(6 * pi * tt2)  + 0.5 * tt2
+
+tryimf <- extractimf(xt2, tt2, check = TRUE)
+emin <- tryimf$emin[ ,1]
+emax <- tryimf$emax[ ,1]
+em <- tryimf$em[ ,1]
+
+
+aux <- extrema(xt2)
+idmin <- aux$minindex[,1]
+idmax <- aux$maxindex[,1]
+pmin <- xt2[idmin]
+pmax <- xt2[idmax]
+extr <- c(rep("min", length(pmin)),rep("max", length(pmax)))
+df1 <- data.frame(n1 = "(a)", n2 = "(b)", n3 = "(c)", n4 = "(d)",
+                  tt2, xt2, emin, emax, em, resid=xt2-em)
+df2 <- data.frame(extr, p=c(pmin, pmax), id=c(tt2[idmin], tt2[idmax]))
+
+library(ggplot2)
+
+g1 <- ggplot(df1, aes(y = xt2, x=tt2)) +
+  geom_line(colour = "green") +
+  geom_point(data=df2, aes(y = p, x = id, colour = extr, shape=extr)) +
+  theme_bw(base_size = 14) +
+  theme(legend.position="none") +
+  labs(x="", y="") +
+  scale_colour_hue(l=45) +
+  facet_grid(n1 ~. )+
+  theme(strip.text.y = element_text(angle = 0), axis.text.x = element_blank())
+
+g2 <- ggplot(df1, aes(x = tt2)) +
+  geom_line(aes(y = xt2), colour = "green") +
+  geom_line(aes(y = emax), colour = "red", linetype=2) + 
+  geom_line(aes(y = emin), colour = "blue", linetype=3) +
+  geom_point(data=df2, aes(y = p, x = id, colour = extr, shape=extr)) +
+  theme_bw(base_size = 14) +
+  theme(legend.position="none") +
+  labs(x="", y="") +
+  scale_colour_hue(l=45) +
+  facet_grid(n2 ~ .)+
+  theme(strip.text.y = element_text(angle = 0), axis.text.x = element_blank())
+
+g3 <- ggplot(df1, aes(x = tt2)) +
+  geom_line(aes(y = xt2), colour = "green") +
+  geom_line(aes(y = em), colour = "black", linetype=4) +
+  theme_bw(base_size = 14) +
+  theme(legend.position="none") +
+  labs(x="", y="") +
+  facet_grid(n3 ~ .)+
+  theme(strip.text.y = element_text(angle = 0), axis.text.x = element_blank())
+
+g4 <- ggplot(df1, aes(x = tt2)) +
+  geom_line(aes(y = resid), colour = "green") +
+  theme_bw(base_size = 14) +
+  theme(legend.position="none") +
+  labs(x="", y="") +
+  ylim(c(-2,4)) +
+  facet_grid(n4 ~ .) +
+  theme(strip.text.y = element_text(angle = 0))
+
+library(gridExtra)
+grid.arrange(g1, g2, g3, g4, ncol=1)
+
+```
+

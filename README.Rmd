@@ -1,0 +1,162 @@
+---
+  output: md_document 
+---
+
+# niemd
+  Núcelo da Inflação como Decomposição de Modo Empírico (EMD)
+
+Tutorial para reproduzir os resultados do artigo "Núcleo da Inflação no Brasil: uma medida usando a decomposição empírica de modo"
+
+## Requisitos técnicos
+
+Caso não tenha ainda instalado:
+  
+  1. Instale o pacote `devtools` do CRAN com o seguinte comando `install.packages("devtools")`.
+2. Programas auxiliares:
+  - **Windows:** instale [Rtools](http://cran.r-project.org/bin/windows/Rtools/)
+- **Mac:** Instale Xcode no Mac App Store
+- **Linux:** Instale várias bibliotecas de desenvolvimento (detalhes variam entre as diferentes distribuições de Linux).
+
+## Reproduzindo os resultados
+
+### Figura 2 - IPCA com as IMFs e o resíduo obtidos com CEEMDAN - 1995.1 a 2016.10.
+
+```{r fig2, message=FALSE}
+library(niemd)
+ipca <- ipca95[,"ipca"]
+demd <- Rlibeemd::ceemdan(ipca, noise_strength = 0.4)
+x <- cbind(ipca, demd)
+colnames(x) <- c("IPCA", colnames(demd))
+tsplot(x)
+```
+
+### Tabela 1 – Medidas descritivas das IMFs e do resíduo para o IPCA de 1995.1 a 2016.5
+
+```{r estdesc}
+n <- length(demd[,1])
+ntml <- apply(demd, 2, function(x) length(Rlibeemd::extrema(x)$maxima[,1]))
+pm <- n/ntml
+vari <- apply(demd, 2, var)
+varip <- (vari/var(ipca))*100
+# tabela com os resultados
+tab <- n2tab(cbind(pm, vari, varip), 2)
+tab <- rbind(obs=c(rep("",1), n2tab(var(ipca), 2), ""),
+             tab,
+             soma=c(rep("",2), n2tab(sum(varip), 2)))
+colnames(tab) <- c("Período Médio (mês)",
+                   "Variância",
+                   "variância como % da variância observada")
+knitr::kable(tab)
+```
+
+
+### Figura 3 - Escolha das IMFs fora da tendência: evolução da média de $u_t$ como uma função de $d$.
+
+```{r fig3, warning=FALSE}
+# media das reconstrucoes parciais 
+fc <- vector()
+rp <- demd
+for(i in 1:(length(demd[1,])-1)){
+  rp[,i]<- apply(as.matrix(demd[,1:i]), 1, sum)
+  fc[i] <- mean(rp[,i])
+}
+
+# teste t
+rpt <- apply(rp, 2, function(x) t.test(x)$p.value)
+
+library(ggplot2)
+n <- length(demd[1,])
+df <- data.frame(media=fc, rpt=n2tab(rpt[-n]), d=1:(n-1))
+g <- ggplot(df, aes(y = media, x = d)) +
+  geom_line(linetype="dashed", alpha=.6) +
+  geom_point() + 
+  geom_hline(yintercept=0) +
+  scale_x_continuous(breaks=1:max(df$d)) +
+  geom_text(aes(y=media+.5*mean(media), label=rpt, vjust=0), size=4.5, family="Times", position = "dodge") +
+  theme_bw(base_size = 14)
+g
+```
+
+### Figura 4 – Tendência e ciclo extraídos da série IPCA com CEEMDAN, 1995.1 a 2016.10
+
+```{r fig4, fig.show='hold', warning=FALSE}
+core <- apply(as.matrix(demd[,-(1:5)]), 1, sum)
+attributes(core) <- attributes(ipca)
+u <- ipca - core
+x <- cbind(tendencia=core, ciclo=u)
+y <- cbind(ipca, NA)
+tsplot(x, y)
+```
+
+### Figura 5 – IPCA e as medidas de núcleo da inflação (% em 12 meses)
+
+```{r fig5, fig.show='hold', warning=FALSE}
+library(grid)
+library(gridExtra)
+x <- cbind(core, ipca95[,-1])
+colnames(x) <- c("CORE-EMD", "IPCA-MAS", "IPCA-MA", "IPCA-EX", "IPCA-EX2", "IPCA-DP")
+y <- ipca
+p1 <- tsplot(acum(x[,1:3]), acum(y))
+p2 <- tsplot(acum(x[,4:6]), acum(y))
+grid.arrange(p1, p2, ncol = 2)
+```
+
+### Tabela 2 – Testes ADF e KPSS para o IPCA e os núcleos - 1995.1 a 2016.5
+
+```{r tab2, warning=FALSE}
+x <- cbind(ipca, core, ipca95[,-1])
+tab <- tab.stationary(acum(x))
+knitr::kable(tab)
+```
+
+### Tabela 3 – Critérios de avaliação dos núcleos da inflação
+
+```{r tab3, warning=FALSE}
+x <- cbind(core, ipca95[,-1])
+tab <- tab.marques(y=acum(ipca), x=acum(x))
+knitr::kable(tab)
+```
+
+### Figura 6 – IPCA e previsões fora da amostra usando as medidas de núcleo, 2012.11 a 2016.10.
+
+```{r fig6}
+# Previsao fora da amostra
+
+cores <- x
+cores <- acum(cores)
+ipca12 <- acum(ipca)
+
+library(zoo)
+out12.mdd <- vector("list")
+for(i in 1:ncol(cores)){
+  out12.mdd[[i]] <- outsample.mdd(yh=ipca12, yt=ipca12, x=cores[ ,i], m=6, p=6, n=48, h=12)
+}
+out12.mdd[[i+1]] <- outsample.mdd(yh=ipca12, yt=ipca12, x=NULL, m=6, p=6, n=48, h=12)
+
+# matriz de dados com as previsoes
+x <-sapply(out12.mdd, function(x) x$fcast)
+atr <- tsp(out12.mdd[[1]]$fcast)
+x <- ts(x, start = atr[1], end = atr[2], frequency = atr[3])
+
+# ipca em 12 meses no periodo fora da amostra
+ipca12 <- window(acum(ipca), start=start(x), end=end(x))
+
+colnames(x) <- c("core", colnames(ipca95[,-1]), "benchmark")
+dados <- cbind(ipca12, x)
+
+colnames(dados) <-c("IPCA", "CORE-EMD", "IPCA-MAS", "IPCA-MA", "IPCA-EX", "IPCA-EX2", "IPCA-DP", "IPCA-referencia")
+tsplot(dados, facet = F)
+
+```
+
+
+### Tabela 4 – Desempenho preditivo fora da amostra das medidas de núcleo para um horizonte de 12 meses à frente, 2012.11 a 2016.10.
+
+```{r tab4}
+dados <- cbind(ipca12, x)
+tab1 <- tab.reqm(dados, obs = "ipca12", ref = "x.benchmark")
+tab2 <- tab.enctest(dados, obs = "ipca12", ref = "x.benchmark")
+tab <- cbind(tab1[,-3], c("",tab2[,3]))
+knitr::kable(tab)
+
+```

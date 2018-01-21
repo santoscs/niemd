@@ -25,4 +25,3 @@ Dados sao extraidos do Banco Central do Brasil para as
 series mensais de janeiro de 1995 ate maio de 2016
 }
 \keyword{datasets}
-

@@ -4,7 +4,9 @@
 
 ##inicia o pacote
 #install.packages("devtools")
+devtools::session_info()
 devtools::setup(rstudio = FALSE)
+
 
 ##preencher o DESCRIPTION
 
@@ -35,15 +37,24 @@ devtools::check()
 ## coloca as dependencias no pacote
 devtools::use_package("ggplot2")
 devtools::use_package("zoo")
-devtools::use_package("tsDyn")
-devtools::use_package("forecast")
-devtools::use_package("vars")
 devtools::use_package("Rlibeemd")
 devtools::use_package("utils")
+devtools::use_package("dyn")
+devtools::use_package("dynlm")
+devtools::use_package("lmtest")
+devtools::use_package("urca")
+devtools::use_package("forecast")
+devtools::use_package("sandwich")
+devtools::use_package("stats")
+devtools::use_package("knitr")
+devtools::use_package("grid")
+devtools::use_package("gridExtra")
+devtools::use_package("ggplot2")
 # devtools::use_package("utils")
 
 ## teste o pacote novamente
 devtools::document()
+
 devtools::check()
 
 # corriga os possiveis erros ou adivertencias apontados 
